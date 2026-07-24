@@ -1,4 +1,5 @@
 // first, lets make terminal with custom instructions, and quit with q, then restore original terminal and exit
+// then lets make the terminal show something! the game interface, at least a slab and the ball
 #include <termios.h>
 #include <unistd.h>
 #include <cstdlib>
