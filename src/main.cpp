@@ -1,5 +1,8 @@
 // first, lets make terminal with custom instructions, and quit with q, then restore original terminal and exit
 // then lets make the terminal show something! the game interface, at least a slab and the ball
+// need to implement camera view port, that will be rendering just part of the level, and following the player
+// will need to animate the environment, not to be so static.
+// game state, will see in coming days
 #include <termios.h>
 #include <unistd.h>
 #include <iostream>
@@ -7,6 +10,8 @@
 #include <format>
 #include <string>
 #include <sys/ioctl.h>
+#include <vector>
+#include <sstream>
 
 /*
  * screen class,
@@ -30,7 +35,7 @@ class Screen
         void restoreCursor();
         void cursorToTopLeft();
         void moveCursor(int row, int col);
-        void draw(); // to be figured out;
+        void draw(std::string&); // to be figured out;
         //handle when screen size changes during game
         std::pair<int, int> getWindowSize();
         std::pair<int, int> retrieveWindowSize();
@@ -42,6 +47,89 @@ class Screen
         int wincols;
         struct termios originalTerminal;
 };
+
+class Game
+{
+    private:
+        std::vector<std::string> levels{};
+        int currentLevel{};
+
+    public:
+        Game();
+        ~Game();
+        void draw(Screen&);
+};
+
+
+int main()
+{
+    Screen S;
+    Game G;
+    G.draw(S);
+    char c = 0;
+    for (;;)
+    {
+        if (read(STDOUT_FILENO, &c, 1) != 1) {}
+        else {
+            if (c == 'q') break;
+        }
+    }
+    return 0;
+}
+
+Game::Game() 
+{
+    currentLevel = 1;
+    levels.push_back(std::string{"\
+###########\n\
+##   ######\n\
+##   ######\n\
+##   ######\n\
+##   ######\n\
+##         \n\
+##@      | \n\
+###########"});
+}
+
+Game::~Game(){};
+
+void Game::draw(Screen& s)
+{
+    std::string buffer{};
+    const int cellsperpoint = 8;
+    std::istringstream level{this->levels[(long unsigned int)this->currentLevel - 1]};
+    
+    for (std::string line; std::getline(level, line);)
+    {
+        for (int i = 0; i < cellsperpoint; ++i)
+        {
+            for (size_t n = 0; n < line.length(); ++n)
+            {
+                for (int j = 0; j < cellsperpoint; ++j)
+                {
+                    switch(line[n])
+                        {
+                            case '#':
+                                buffer += "\033[48;5;196m \033[0m";
+                                break;
+                            case ' ':
+                                buffer += "\033[48;5;251m \033[0m";
+                                break;
+                            default:
+                                buffer += ' ';
+                        }
+                }
+            }
+            buffer += "\r\n";
+        }
+    }
+    s.draw(buffer);
+}
+
+void Screen::draw(std::string& str)
+{
+    std::cout << str;
+}
 
 Screen::Screen(): winrows{}, wincols{}, originalTerminal{}
 {
@@ -108,7 +196,7 @@ bool Screen::enableRawMode()
     raw.c_lflag &= ~static_cast<tcflag_t>((ECHO | ICANON | ISIG | IEXTEN));
     raw.c_cflag |= (CS8);
     raw.c_cc[VMIN] = 0; //minimum characters before read return
-    raw.c_cc[VTIME] = 0; //time after which read returns if no input
+    raw.c_cc[VTIME] = 1; //time after which read returns if no input
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) return false;
     return true;
@@ -138,17 +226,3 @@ std::pair<int, int> Screen::retrieveWindowSize()
     return std::pair<int, int>{ws.ws_row, ws.ws_col};
 }
 
-int main()
-{
-    Screen S;
-    std::cout << S;
-    char c = 0;
-    for (;;)
-    {
-        if (read(STDOUT_FILENO, &c, 1) != 1) {}
-        else {
-            if (c == 'q') break;
-        }
-    }
-    return 0;
-}
