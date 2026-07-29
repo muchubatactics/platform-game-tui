@@ -7,11 +7,11 @@
 #include <unistd.h>
 #include <iostream>
 #include <utility>
-#include <format>
 #include <string>
 #include <sys/ioctl.h>
 #include <vector>
-#include <sstream>
+#include <spanstream>
+#include <string_view>
 
 /*
  * screen class,
@@ -51,21 +51,40 @@ class Screen
 class Game
 {
     private:
-        std::vector<std::string> levels{};
+        std::vector<std::string_view> levels{};
         int currentLevel{};
+        int cellsperpoint{};
+        std::pair<int, int> writingPoint{1,1};
+        Screen& screenref;
 
     public:
-        Game();
+        Game(Screen&);
         ~Game();
-        void draw(Screen&);
+        void draw();
 };
 
+struct point
+{
+    point(int x, int y) : row(x), col(y) {};
+    int row;
+    int col;
+};
+
+class Character
+{
+    private:
+        struct point startingpoint;
+        struct point currentpoint;
+
+    public:
+
+};
 
 int main()
 {
     Screen S;
-    Game G;
-    G.draw(S);
+    Game G(S);
+    G.draw();
     char c = 0;
     for (;;)
     {
@@ -77,10 +96,11 @@ int main()
     return 0;
 }
 
-Game::Game() 
+Game::Game(Screen& s): screenref(s)
 {
-    currentLevel = 1;
-    levels.push_back(std::string{"\
+    cellsperpoint = 4; 
+    currentLevel = 2;
+    levels.push_back(std::string_view{"\
 ###########\n\
 ##   ######\n\
 ##   ######\n\
@@ -89,31 +109,48 @@ Game::Game()
 ##         \n\
 ##@      | \n\
 ###########"});
+    levels.push_back(std::string_view{"\
+......................\n\
+..#................#..\n\
+..#..............=.#..\n\
+..#.........o.o....#..\n\
+..#.@......#####...#..\n\
+..#####............#..\n\
+......#++++++++++++#..\n\
+......##############..\n\
+......................"});
 }
 
 Game::~Game(){};
 
-void Game::draw(Screen& s)
+void Game::draw()
 {
     std::string buffer{};
-    const int cellsperpoint = 8;
-    std::istringstream level{this->levels[(long unsigned int)this->currentLevel - 1]};
+    std::ispanstream level{this->levels[(size_t)this->currentLevel - 1]};
     
+    // need to improve this, thinking is, we avoid getline, instead loop through the level, saving lines, watching for \n chars, on \n, duplicate line 
     for (std::string line; std::getline(level, line);)
     {
         for (int i = 0; i < cellsperpoint; ++i)
         {
             for (size_t n = 0; n < line.length(); ++n)
             {
-                for (int j = 0; j < cellsperpoint; ++j)
+                for (int j = 0; j < cellsperpoint + 2; ++j)
                 {
                     switch(line[n])
                         {
                             case '#':
-                                buffer += "\033[48;5;196m \033[0m";
+                                buffer += "\033[48;5;234m \033[0m";
                                 break;
                             case ' ':
-                                buffer += "\033[48;5;251m \033[0m";
+                            case '.':
+                                buffer += "\033[48;5;244m \033[0m";
+                                break;
+                            case '+':
+                                buffer += "\033[48;5;88m \033[0m";
+                                break;
+                            case 'o':
+                                buffer += "\033[48;5;208m \033[0m";
                                 break;
                             default:
                                 buffer += ' ';
@@ -123,12 +160,27 @@ void Game::draw(Screen& s)
             buffer += "\r\n";
         }
     }
-    s.draw(buffer);
+    this->screenref.draw(buffer);
 }
 
 void Screen::draw(std::string& str)
 {
-    std::cout << str;
+    const float fillpercent = 0.6f; //60%
+    // need to put constraints for when window size is to small, to ignore the percentage and fill most of/ all of the screen
+
+    // at the very least, we seem to require 18 rows and 8 cols, of course we should be able to play with less, ( given the view port to be implemented )
+    int cc = static_cast<int>(((1.0f - fillpercent) / 2.0f) * (float)wincols); 
+    int r = static_cast<int>(((1.0f - fillpercent) / 2.0f) * (float)winrows); 
+
+    moveCursor(r, cc);
+    // here improve by making text then sending to output at once, not char by char
+    std::for_each(str.cbegin(), str.cend(), [&](const char c) {
+                if (c == '\n')
+                {
+                    moveCursor(++r, cc);
+                }
+                write(STDOUT_FILENO, &c, 1);
+            });
 }
 
 Screen::Screen(): winrows{}, wincols{}, originalTerminal{}
@@ -140,6 +192,11 @@ Screen::Screen(): winrows{}, wincols{}, originalTerminal{}
     std::pair<int, int> winsize = retrieveWindowSize();
     winrows = winsize.first;
     wincols = winsize.second;
+
+    //tmp
+    //paint whole screen white-ish
+    write(STDOUT_FILENO, "\033[48;5;244m", 11);
+    clearScreen();
 }
 
 Screen::~Screen()
@@ -180,7 +237,8 @@ void Screen::restoreCursor()
  */
 void Screen::moveCursor(int row, int col)
 {
-    std::string str = std::format("\033[{};{}H", row, col);
+    std::string str{"\033["};
+    str += std::to_string(row) + ';' + std::to_string(col) + 'H';
     write(STDOUT_FILENO, str.c_str(), str.length());
 }
 
@@ -226,3 +284,7 @@ std::pair<int, int> Screen::retrieveWindowSize()
     return std::pair<int, int>{ws.ws_row, ws.ws_col};
 }
 
+std::pair<int, int> Screen::getWindowSize()
+{
+    return std::pair<int, int>{winrows, wincols};
+}
