@@ -403,7 +403,7 @@ void ViewPort::draw()
     // when we put movement this will become more complicated;
     std::string buffer{cur.substr(bc, vpc)};
     //reserve?
-    for (std::string::size_type i = 0; i < cur.size(); ++i)
+    for (std::string::size_type i = l; i < cur.size(); i += l + 1)
     {
         if (cur[i] == '\n' && i + 1 < cur.size())
         {
