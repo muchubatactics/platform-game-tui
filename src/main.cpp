@@ -1,8 +1,3 @@
-// first, lets make terminal with custom instructions, and quit with q, then restore original terminal and exit
-// then lets make the terminal show something! the game interface, at least a slab and the ball
-// need to implement camera view port, that will be rendering just part of the level, and following the player
-// will need to animate the environment, not to be so static.
-// game state, will see in coming days
 #include <termios.h>
 #include <unistd.h>
 #include <iostream>
@@ -302,23 +297,23 @@ class Game
     private:
         std::vector<std::string_view> levels{};
         int currentLevel{};
-        int cellsperpoint{};
-        std::pair<int, int> writingPoint{1,1};
-        Screen& screenref;
         std::vector<Character*> characters{};
         std::string gamestate{};
         int coinsleft{};
+        std::string::size_type currentLevelRowLength{};
         Player* maincharacter{nullptr};
 
     public:
-        Game(Screen&);
+        Game();
         ~Game();
-        void draw();
         void updateGameState();
         void paintCharactersInGameState();
         void consumeKey(char);
-        const std::string convertGameStateToScreenStr(std::string_view);
         void removeCharactersFromGameState();
+        const std::string& getGameState();
+        const Player* getMainCharacter();
+        int getCharacterIndexInGameState(const Character*);
+        std::string::size_type getCurrentLevelRowLength();
 
         //disable copying
         Game(const Game&) = delete;
@@ -331,7 +326,7 @@ class ViewPort
         ViewPort(Screen&, Game&);
         ~ViewPort();
         void draw();
-        void convertGameStateToScreenStr();
+        const std::string convertGameStateToScreenStr(std::string_view);
 
     private:
         Screen& screenref;
@@ -345,7 +340,7 @@ int main()
     Screen S;
     Game G;
     ViewPort vp{S, G};
-    G.draw();
+    vp.draw();
     char c = 0;
     for (;;)
     {
@@ -355,14 +350,120 @@ int main()
             G.consumeKey(c);
         }
         G.updateGameState();
-        G.draw();
+        vp.draw();
     }
     return 0;
 }
 
-Game::Game(Screen& s): screenref(s)
+ViewPort::ViewPort(Screen& s, Game& g): screenref{s}, gameref{g}, scale{4} // will eventually have to calculate scale from the screen row col size
+{}
+
+ViewPort::~ViewPort()
+{}
+
+void ViewPort::draw()
 {
-    cellsperpoint = 1; 
+    const std::string& cur = gameref.getGameState();
+    int i = gameref.getCharacterIndexInGameState(gameref.getMainCharacter()); // converts the Player* to Character*
+    if (i == -1)
+    {
+        //something is wrong
+        // handle it
+        return;
+    }
+
+    // let target a 20 rows by 26 cols, for now
+    // 6 14 6 for cols 
+    // 5 10 5 for rows
+    //
+    // BE CAREFUL WE ARE USING LONG UNSIGNED INTS HERE, SUBTRACTING FROM ZERO WILL OVERFLOW TO A HUGE INT
+    const std::string::size_type vpc = 26;
+//    const int vpr = 20;
+    std::string::size_type bc = 0;
+    const std::string::size_type l = gameref.getCurrentLevelRowLength();
+    
+    struct point pnt = gameref.getMainCharacter()->getCurrentPoint();
+   
+    // pnt row col is 1 based, a relic from the tui winsize being 1 based
+    if (pnt.col - 1 >= (int)l - 6 - 14)
+    {
+        bc = l - vpc;
+    }
+    else if (pnt.col - 1 <= 20)
+    {
+        bc = 0;
+    }
+    else
+    {
+        // can either be on 6 or on 6 + 14, depending on previous position
+        // but lets initialize it to 6 for now
+        bc = (std::string::size_type)pnt.col - 1 - 6;
+    }
+
+    // when we put movement this will become more complicated;
+    std::string buffer{cur.substr(bc, vpc)};
+    //reserve?
+    for (std::string::size_type i = 0; i < cur.size(); ++i)
+    {
+        if (cur[i] == '\n' && i + 1 < cur.size())
+        {
+            buffer += '\n';
+            buffer += cur.substr(i + 1 + bc, vpc);
+        }
+    }
+
+    screenref.draw(convertGameStateToScreenStr(buffer));
+}
+
+const std::string ViewPort::convertGameStateToScreenStr(std::string_view sv)
+{
+    std::string buffer{};
+    std::string line{};
+    std::for_each(sv.cbegin(), sv.cend(), [&] (const char c)
+            {
+                if (c == '\n' || c == '\0')
+                {
+                    for (int i = 0; i < scale; ++i)
+                    {
+                        buffer += line;
+                        buffer += "\r\n";
+                    }
+                    line = "";
+                }
+                else {
+                    switch(c)
+                        {
+                            case '#':
+                                line += "\033[48;5;234m";
+                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += " ";
+                                line += "\033[48;5;244m";
+                                break;
+                            case '+':
+                                line += "\033[48;5;88m";
+                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += " ";
+                                line += "\033[48;5;244m";
+                                break;
+                            case 'o':
+                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += Coin::getStr();
+                                break;
+                            case '=':
+                            case '|':
+                            case 'v':
+                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += Lava::getStr();
+                                break;
+                            case '@':
+                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += Player::getStr();
+                                break;
+                            default:
+                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += " ";
+                        }
+                }
+            });
+    return buffer;
+}
+
+Game::Game()
+{
     currentLevel = 2;
 
 // braces to easily collapse this
@@ -624,56 +725,24 @@ Game::Game(Screen& s): screenref(s)
 
     coinsleft = coinnumber;
     gamestate = buffer;
+    currentLevelRowLength = thislevel.find('\n');
     //draw the characters; maybe;
     paintCharactersInGameState();
 }
 
-const std::string Game::convertGameStateToScreenStr(std::string_view sv)
+std::string::size_type Game::getCurrentLevelRowLength()
 {
-    std::string buffer{};
-    std::string line{};
-    int scale = cellsperpoint;
-    std::for_each(sv.cbegin(), sv.cend(), [&] (const char c)
-            {
-                if (c == '\n' || c == '\0')
-                {
-                    for (int i = 0; i < scale; ++i)
-                    {
-                        buffer += line;
-                        buffer += "\r\n";
-                    }
-                    line = "";
-                }
-                else {
-                    switch(c)
-                        {
-                            case '#':
-                                line += "\033[48;5;234m";
-                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += " ";
-                                line += "\033[48;5;244m";
-                                break;
-                            case '+':
-                                line += "\033[48;5;88m";
-                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += " ";
-                                line += "\033[48;5;244m";
-                                break;
-                            case 'o':
-                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += Coin::getStr();
-                                break;
-                            case '=':
-                            case '|':
-                            case 'v':
-                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += Lava::getStr();
-                                break;
-                            case '@':
-                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += Player::getStr();
-                                break;
-                            default:
-                                for (int i = 0; i < scale + (int)(scale / 2); ++i) line += " ";
-                        }
-                }
-            });
-    return buffer;
+    return currentLevelRowLength;
+}
+
+const Player* Game::getMainCharacter()
+{
+    return maincharacter;
+}
+
+const std::string& Game::getGameState()
+{
+    return gamestate;
 }
 
 void Game::removeCharactersFromGameState()
@@ -692,33 +761,40 @@ void Game::removeCharactersFromGameState()
     }
 }
 
+int Game::getCharacterIndexInGameState(const Character* cptr)
+{
+    // we are taking advantage of all lines being of equal length;
+    // reducing it to (n + 1) * (r - 1) + (c - 1)
+    std::string::size_type n = currentLevelRowLength;
+    struct point pos = cptr->getCurrentPoint();
+
+    if (!pos.row || !pos.col)
+    {
+        //error handle
+        return -1;
+    }
+    if (pos.row == -1 && pos.col == -1)
+    {
+        //okay
+        return -1;
+    }
+    if (pos.row < -1 || pos.col < 0)
+    {
+        // error handle
+        return -1;
+    }
+    return ((static_cast<int>(n) + 1) * (pos.row - 1)) + (pos.col - 1);
+}
 
 void Game::paintCharactersInGameState()
 {
     // remove existing characters
     removeCharactersFromGameState();
-    std::string::size_type n = gamestate.find('\n');
-    // we are taking advantage of all lines being of equal length;
-    // reducing it to (n + 1) * (r - 1) + (c - 1)
     for (Character* ptr : characters)
     {
-        struct point pos = ptr->getCurrentPoint();
-        if (!pos.row || !pos.col)
-        {
-            //error handle
-            return;
-        }
-        if (pos.row == -1 && pos.col == -1)
-        {
-            //okay
-            return;
-        }
-        if (pos.row < -1 || pos.col < 0)
-        {
-            // error handle
-            return;
-        }
-        std::string::size_type index = ((n + 1) * (std::string::size_type)(pos.row - 1)) + (std::string::size_type)(pos.col - 1);
+        int i = getCharacterIndexInGameState(ptr);
+        if (i == -1) continue; // invalid index 
+        std::string::size_type index = (std::string::size_type)(i);
         if (index >= gamestate.length()) {} // BIG ERROR, handle it
         else
         {
@@ -759,16 +835,14 @@ Game::~Game()
     }
 }
 
-void Game::draw()
-{
-    screenref.draw(convertGameStateToScreenStr(gamestate));
-}
-
 void Game::consumeKey(char c)
 {
     if (maincharacter) maincharacter->consumeKeyPress(c);
 }
 
+
+// given the viewport, should the screen still draw??
+// probably not, but we shall see
 void Screen::draw(const std::string& str)
 {
 //    const float fillpercent = 0.6f; //60%
