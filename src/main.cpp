@@ -127,10 +127,10 @@ void Player::updatePoint()
         if (verticalforce > 0)
         {
             verticalforce--;
-            setCurrentPoint(cur.row, --cur.col);
+            setCurrentPoint(--cur.row, cur.col);
         } else {
             verticalforce++;
-            setCurrentPoint(cur.row, ++cur.col);
+            setCurrentPoint(++cur.row, cur.col);
         }
     }
     if (horizontalforce)
@@ -138,10 +138,10 @@ void Player::updatePoint()
         if (horizontalforce > 0)
         {
             horizontalforce--;
-            setCurrentPoint(++cur.row, cur.col);
+            setCurrentPoint(cur.row, ++cur.col);
         } else {
             horizontalforce++;
-            setCurrentPoint(--cur.row, cur.col);
+            setCurrentPoint(cur.row, --cur.col);
         }
     }
 }
@@ -162,6 +162,8 @@ void Player::consumeKeyPress(char c)
         case 'd':
             horizontalforce++;
             break;
+        default:
+            ;;
     }
 }
 
@@ -195,11 +197,11 @@ void Lava::updatePoint()
     struct point cur = getCurrentPoint();
     if (horizontalspeed)
     {
-        setCurrentPoint(cur.row += horizontalspeed, cur.col);
+        setCurrentPoint(cur.row, cur.col -= horizontalspeed);
     }
     if (verticalspeed)
     {
-        setCurrentPoint(cur.row, cur.col -= verticalspeed);
+        setCurrentPoint(cur.row += verticalspeed, cur.col);
     }
 }
 
@@ -316,16 +318,33 @@ class Game
         void paintCharactersInGameState();
         void consumeKey(char);
         const std::string convertGameStateToScreenStr(std::string_view);
+        void removeCharactersFromGameState();
 
         //disable copying
         Game(const Game&) = delete;
         Game& operator=(const Game&) = delete;
 };
 
+class ViewPort
+{
+    public:
+        ViewPort(Screen&, Game&);
+        ~ViewPort();
+        void draw();
+        void convertGameStateToScreenStr();
+
+    private:
+        Screen& screenref;
+        Game& gameref;
+        int scale;
+};
+
+
 int main()
 {
     Screen S;
-    Game G(S);
+    Game G;
+    ViewPort vp{S, G};
     G.draw();
     char c = 0;
     for (;;)
@@ -334,16 +353,16 @@ int main()
         else {
             if (c == 'q') break;
             G.consumeKey(c);
-            G.updateGameState();
-            G.draw();
         }
+        G.updateGameState();
+        G.draw();
     }
     return 0;
 }
 
 Game::Game(Screen& s): screenref(s)
 {
-    cellsperpoint = 3; 
+    cellsperpoint = 1; 
     currentLevel = 2;
 
 // braces to easily collapse this
@@ -576,14 +595,14 @@ Game::Game(Screen& s): screenref(s)
                                 }
                             case '|':
                                 {
-                                    Lava* c = new Lava({rown, coln}, -1, 0, false);
+                                    Lava* c = new Lava({rown, coln}, 1, 0, false);
                                     characters.push_back(c);
                                     buffer += '.';
                                     break;
                                 }
                             case 'v':
                                 {
-                                    Lava* c = new Lava({rown, coln}, -1, 0, true);
+                                    Lava* c = new Lava({rown, coln}, 1, 0, true);
                                     characters.push_back(c);
                                     buffer += '.';
                                     break;
@@ -657,8 +676,27 @@ const std::string Game::convertGameStateToScreenStr(std::string_view sv)
     return buffer;
 }
 
+void Game::removeCharactersFromGameState()
+{
+    for (std::string::size_type i = 0; i < gamestate.size(); ++i)
+    {
+        switch(gamestate[i])
+        {
+            case '@':
+            case '=':
+            case 'o':
+                gamestate[i] = '.';
+            default:
+                ;;
+        }
+    }
+}
+
+
 void Game::paintCharactersInGameState()
 {
+    // remove existing characters
+    removeCharactersFromGameState();
     std::string::size_type n = gamestate.find('\n');
     // we are taking advantage of all lines being of equal length;
     // reducing it to (n + 1) * (r - 1) + (c - 1)
@@ -752,7 +790,10 @@ void Screen::draw(const std::string& str)
 //
     // here we are having a challenge, if we want to print the string at once, we need to insert move cursor ascii codes after every line
     // for now, ill just print to the top left, till i implement the viewport
-
+    
+    //need to first clear screen
+    clearScreen();
+    cursorToTopLeft();
     write(STDOUT_FILENO, str.c_str(), str.length());
 }
 
