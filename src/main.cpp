@@ -6,6 +6,7 @@
 #include <sys/ioctl.h>
 #include <vector>
 #include <string_view>
+#include <fstream>
 
 struct point
 {
@@ -14,7 +15,8 @@ struct point
     int col;
 };
 
-enum class CharacterType {
+enum class CharacterType
+{
     Player,
     Lava,
     Coin,
@@ -288,6 +290,9 @@ class Screen
         void writeError(std::string_view);
         struct point convertToScrCoordinates(int, int, bool);
 
+        // for easier logging
+        std::ofstream& getLog();
+
         //temp
         friend std::ostream& operator<<(std::ostream&, Screen&);
 
@@ -297,6 +302,9 @@ class Screen
         struct termios originalTerminal;
         std::string previousframe;
         int scale;
+        // todo:: move this to own class and make it available for everyone;
+        // or i can redirect std::cerr to the file then use that, since its already accessible everywhere
+        std::ofstream logstream;
 };
 
 class Game
@@ -443,8 +451,7 @@ void ViewPort::draw()
             ;;
         }
     }
-
-    screenref.writeError(std::to_string(pnt.row) + " " + std::to_string(buffer.size()) + " " + std::to_string(br));
+    
     screenref.draw(buffer);
 }
 
@@ -881,8 +888,23 @@ const std::string Screen::convertToScreenStr(std::string_view sv)
 
 void Screen::writeError(std::string_view str)
 {
-    moveCursor(winrows, 0);
-    write(STDOUT_FILENO, str.data(), str.size());
+    if (logstream.is_open())
+    {
+        logstream << str;
+    }
+    else
+    {
+        moveCursor(winrows, 0);
+        write(STDOUT_FILENO, str.data(), str.size());
+    }
+}
+
+/*
+ * caller must remember to check if file is open
+ */
+std::ofstream& Screen::getLog()
+{
+    return logstream;
 }
 
 // given the viewport, should the screen still draw??
@@ -929,7 +951,7 @@ void Screen::draw(const std::string& str)
         if (previousframe.size() != str.size())
         {
             // hehehe error here probably
-            //writeError("previous frame size not equal to current frame size, unexpected");
+            writeError("previous frame size not equal to current frame size, unexpected");
             // handle
             return; // ??
         }
@@ -1002,7 +1024,8 @@ struct point Screen::convertToScrCoordinates(int r, int c, bool is1based)
     result.col = ((scale + (int)(scale / 2)) * (c - 1)) + 1;
     return result;
 }
-Screen::Screen(): winrows{}, wincols{}, originalTerminal{}, previousframe{}, scale{4}
+
+Screen::Screen(): winrows{}, wincols{}, originalTerminal{}, previousframe{}, scale{}, logstream{}
 {
     enableRawMode();
     enableAltBuffer();
@@ -1012,10 +1035,31 @@ Screen::Screen(): winrows{}, wincols{}, originalTerminal{}, previousframe{}, sca
     winrows = winsize.first;
     wincols = winsize.second;
 
+    //calculate scale
+    // we know viewport is 20 by 26, hardcoded for now
+    // and when scale is applied, its 20 * scale rows, plus 26 * (scale + scale/2)
+    // equations are s < wr/20 and s < wc/39, the minimum of those;
+
+    int s1 = (winrows/20);
+    int s2 = (wincols/39);
+    
+    scale = s1 < s2 ? s1 : s2;
+
+    //open log file
+    logstream.open("bounce.log");
+
     //tmp
     //paint whole screen white-ish
     write(STDOUT_FILENO, "\033[48;5;244m", 11);
     clearScreen();
+    if (getLog().is_open())
+    {
+        getLog() << winrows << ' ' << wincols << ' ' << scale << std::endl;
+    }
+    else
+    {
+        writeError("error occured in opening log file");
+    }
 }
 
 Screen::~Screen()
@@ -1023,6 +1067,7 @@ Screen::~Screen()
     disableRawMode();
     disableAltBuffer();
     restoreCursor();
+    logstream.close();
 }
 
 std::ostream& operator<<(std::ostream& os, Screen& s)
