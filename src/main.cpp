@@ -404,10 +404,12 @@ class Game
         std::string::size_type currentLevelRowLength{};
         std::string::size_type currentLevelHeight{};
         Player* maincharacter{nullptr};
+        
+        bool playerdead{false}; 
 
         //time
         std::chrono::steady_clock::time_point lasttick{};
-        const std::chrono::milliseconds tickduration{100}; // a second
+        const std::chrono::milliseconds tickduration{100};
 
     public:
         Game();
@@ -427,6 +429,14 @@ class Game
         void progressLevel();
         void restartLevel();
         void endGame();
+        void restartGame();
+        void setInitialState();
+
+        bool isPlayerDead();
+        bool isLivesDepleted();
+        bool isGameCompleted();
+
+        void setPlayerDead(bool);
 
         //disable copying
         Game(const Game&) = delete;
@@ -443,8 +453,74 @@ class ViewPort
     private:
         Screen& screenref;
         Game& gameref;
-};
 
+        const std::string playerdeadscreen{"\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+.......#.#.###.#.#........\n\
+.......#.#.#.#.#.#........\n\
+........#..#.#.#.#........\n\
+........#..###.###........\n\
+..........................\n\
+.....##..###.###.##.......\n\
+.....#.#..#..#...#.#......\n\
+.....#.#..#..##..#.#......\n\
+.....##..###.###.##.......\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n"};
+
+        const std::string livesdepletedscreen{"\
+..........................\n\
+.....###.###.#.#.###......\n\
+.....#...#.#.###.#........\n\
+.....#.#.###.###.##.......\n\
+.....###.#.#.#.#.###......\n\
+..........................\n\
+.....###.#.#.###.###......\n\
+.....#.#.#.#.#...#.#......\n\
+.....#.#.#.#.##..###......\n\
+.....###..#..###.#.#......\n\
+..........................\n\
+...#...###.#.#.###.###....\n\
+...#....#..#.#.#...#......\n\
+...#....#..#.#.##..###....\n\
+...###.###..#..###...#....\n\
+..........................\n\
+.....##..###.###.###......\n\
+.....#.#.#.#.#.#.#........\n\
+.....#.#.#.#.#.#.##.......\n\
+.....##..###.#.#.###......\n"};
+
+        const std::string levelscompletedscreen{"\
+..........................\n\
+.....###.###.###.###......\n\
+.....#.#..#..#...#........\n\
+.....#.#..#..#...##.......\n\
+.....#.#.###.###.###......\n\
+..........................\n\
+.......###.#...#..........\n\
+.......#.#.#...#..........\n\
+.......###.#...#..........\n\
+.......#.#.###.###........\n\
+..........................\n\
+.#...###.#.#.###.#...###..\n\
+.#...#...#.#.#...#...#....\n\
+.#...##..#.#.##..#...###..\n\
+.###.###..#..###.###...#..\n\
+..........................\n\
+.....##..###.###.###......\n\
+.....#.#.#.#.#.#.#........\n\
+.....#.#.#.#.#.#.##.......\n\
+.....##..###.#.#.###......\n"};
+
+};
 
 int main()
 {
@@ -475,22 +551,42 @@ ViewPort::~ViewPort()
 
 void ViewPort::draw()
 {
-    const std::string& cur = gameref.getGameState();
+    const std::string* pstr = nullptr;
+    bool isScreen{true};
+    if (gameref.isGameCompleted())
+    {
+        pstr = &levelscompletedscreen;
+    } else if (gameref.isLivesDepleted())
+    {
+        pstr = &livesdepletedscreen;
+    }
+    else if (gameref.isPlayerDead())
+    {
+        pstr = &playerdeadscreen;
+    }
+    else
+    {
+        isScreen = false;
+        pstr = &(gameref.getGameState());
+    }
+
+    const std::string& cur = *pstr;
 
     // let target a 20 rows by 26 cols, for now
     // 6 14 6 for cols 
     // 7 6 7 for rows
     //
     // BE CAREFUL WE ARE USING LONG UNSIGNED INTS HERE, SUBTRACTING FROM ZERO WILL OVERFLOW TO A HUGE INT
-    const std::string::size_type l = gameref.getCurrentLevelRowLength(); // if this is n, it means theres n + 1 characters in the str per row, the + 1 being the \n character
-    const std::string::size_type h = gameref.getCurrentLevelHeight(); // if this is n, it means theres n lines;
+    const std::string::size_type l = isScreen ? 26ul : gameref.getCurrentLevelRowLength(); // if this is n, it means theres n + 1 characters in the str per row, the + 1 being the \n character
+    const std::string::size_type h = isScreen ? 20ul : gameref.getCurrentLevelHeight(); // if this is n, it means theres n lines;
 
     const std::string::size_type vpc = std::min(l, 26ul);
     const std::string::size_type vpr = std::min(h, 20ul);
     std::string::size_type bc = 0;
     std::string::size_type br = 0;
     
-    struct point pnt = gameref.getMainCharacter()->getCurrentPoint();
+    struct point pnt{1, 1};
+    if (!isScreen) pnt = gameref.getMainCharacter()->getCurrentPoint();
    
     // pnt row col is 1 based, a relic from the tui winsize being 1 based
     if (vpc >= l)
@@ -643,6 +739,7 @@ void Game::initLevel(int level)
 
 void Game::restartLevel()
 {
+    setPlayerDead(false);
     currentLevel--;
     progressLevel();
     // hacky ?? implications ??
@@ -650,29 +747,21 @@ void Game::restartLevel()
 
 void Game::endGame()
 {
-    // display end game screen
-
     // free mem for old characters
     for (Character* ptr : characters)
     {
         delete ptr;
     }
 
+    maincharacter = nullptr; // no free because its part of the characters vector, already freed
     characters = {};
 }
 
 void Game::progressLevel()
 {
+    endGame();
+    setPlayerDead(false);
     int newlevel = currentLevel + 1;
-
-    // free mem for old characters
-    for (Character* ptr : characters)
-    {
-        delete ptr;
-    }
-
-    characters = {};
-
     if ((std::vector<std::string_view>::size_type)newlevel > levels.size())
     {
         // game is done, handle
@@ -684,11 +773,42 @@ void Game::progressLevel()
     initLevel(currentLevel);
 }
 
-Game::Game()
+void Game::setInitialState()
 {
     currentLevel = 1;
     livesleft = 3;
+    playerdead = false;
+}
 
+void Game::restartGame()
+{
+    endGame();
+    setInitialState();
+    initLevel(currentLevel);
+}
+
+bool Game::isPlayerDead()
+{
+    return playerdead;
+}
+
+void Game::setPlayerDead(bool val)
+{
+    playerdead = val;
+}
+
+bool Game::isLivesDepleted()
+{
+    return livesleft <= 0;
+}
+
+bool Game::isGameCompleted()
+{
+    return (std::string_view::size_type)currentLevel == levels.size() && coinsleft <= 0 && !playerdead;
+}
+
+Game::Game()
+{
 // braces to easily collapse this
 {
     levels.push_back(std::string_view{"\
@@ -880,6 +1000,7 @@ Game::Game()
 ..............................................................................................................\n"});
 }
 
+    setInitialState();
     initLevel(currentLevel);
 }
 
@@ -1076,12 +1197,8 @@ void Game::updateGameState()
                ) // player collision with static or dynamic lava or dynamic lava collision with player
             {
                 livesleft--;
-                if (livesleft <= 0)
-                {
-                    endGame();
-                    return;
-                }
-                restartLevel();
+                endGame();
+                setPlayerDead(true);
                 return;
             }
 
@@ -1118,6 +1235,7 @@ void Game::updateGameState()
                     {
                         if (coinsleft < 0) std::cerr << "invalid coinsleft number " << coinsleft << '\n';
                         progressLevel();
+                        // could also put a level complete screen, same as dead, etc
                         return; // ??
                     }
                 }
@@ -1139,7 +1257,18 @@ Game::~Game()
 
 void Game::consumeKey(char c)
 {
-    if (maincharacter) maincharacter->consumeKeyPress(c);
+    if (isGameCompleted() || isLivesDepleted())
+    {
+        std::cerr << "attempting to restartGame()\n";
+        restartGame();
+    }
+    else if (isPlayerDead())
+    {
+        std::cerr << "attempting to restartLevel()\n";
+        setPlayerDead(false);
+        restartLevel();
+    }
+    else if (maincharacter) maincharacter->consumeKeyPress(c);
 }
 
 const std::string Screen::convertToScreenStr(std::string_view sv)
