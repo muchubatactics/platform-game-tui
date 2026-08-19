@@ -409,7 +409,7 @@ class Game
 
         //time
         std::chrono::steady_clock::time_point lasttick{};
-        const std::chrono::milliseconds tickduration{100};
+        const std::chrono::milliseconds tickduration{200};
 
     public:
         Game();
@@ -435,6 +435,7 @@ class Game
         bool isPlayerDead();
         bool isLivesDepleted();
         bool isGameCompleted();
+        bool isLevelComplete();
 
         void setPlayerDead(bool);
 
@@ -449,10 +450,15 @@ class ViewPort
         ViewPort(Screen&, Game&);
         ~ViewPort();
         void draw();
+        void calculateTopLeft(std::string::size_type, std::string::size_type, std::string::size_type, std::string::size_type, bool);
+        void updateTopLeft(std::string::size_type, std::string::size_type, std::string::size_type, std::string::size_type);
 
     private:
         Screen& screenref;
         Game& gameref;
+        std::string::size_type top{0};
+        std::string::size_type left{0};
+        bool shouldReset{true};
 
         const std::string playerdeadscreen{"\
 ..........................\n\
@@ -520,6 +526,28 @@ class ViewPort
 .....#.#.#.#.#.#.##.......\n\
 .....##..###.#.#.###......\n"};
 
+        const std::string levelcompletescreen{"\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+...#...###.#.#.###.#......\n\
+...#...#...#.#.#...#......\n\
+...#...##..#.#.##..#......\n\
+...###.###..#..###.###....\n\
+..........................\n\
+.....##..###.###.###......\n\
+.....#.#.#.#.#.#.#........\n\
+.....#.#.#.#.#.#.##.......\n\
+.....##..###.#.#.###......\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n\
+..........................\n"};
+
 };
 
 int main()
@@ -549,6 +577,105 @@ ViewPort::ViewPort(Screen& s, Game& g): screenref{s}, gameref{g}
 ViewPort::~ViewPort()
 {}
 
+void ViewPort::updateTopLeft(std::string::size_type l, std::string::size_type h, std::string::size_type vpc, std::string::size_type vpr)
+{
+    if (!gameref.getMainCharacter())
+    {
+        std::cerr << "main character ptr is null\n";
+        return;
+    }
+    struct point pnt = gameref.getMainCharacter()->getCurrentPoint();
+
+    if (
+            (pnt.col - 1)> (int)(left + vpc) ||
+            (pnt.col - 1) < (int)left ||
+            (pnt.row - 1) > (int)(top + vpr) ||
+            (pnt.row - 1) < (int)top
+       )
+    {
+        std::cerr << "main character doesnt lie in view port, attempting to recalculate view port\n";
+        calculateTopLeft(l,h,vpc,vpr,false);
+        return;
+    }
+
+    int tmp = (int)left;
+
+    if (pnt.col - 1 > tmp + 6 + 14)
+    {
+        tmp += (pnt.col - 1) - (tmp + 6 + 14); 
+        if (tmp > (int)(l - vpc)) tmp = (int)(l - vpc);
+        left = (std::string::size_type)tmp;
+    }
+    else if (pnt.col - 1 - tmp < 6)
+    {
+        tmp -= (tmp + 6) - (pnt.col - 1); 
+        if (tmp < 0) tmp = 0;
+        left = (std::string::size_type)tmp;
+    }
+
+    tmp = (int)top;
+
+    if (pnt.row - 1 > tmp + 7 + 6)
+    {
+        tmp += (pnt.row - 1) - (tmp + 7 + 6); 
+        if (tmp > (int)(h - vpr)) tmp = (int)(h - vpr);
+        top = (std::string::size_type)tmp;
+    }
+    else if (pnt.row - 1 - tmp < 7)
+    {
+        tmp -= (tmp + 7) - (pnt.row - 1);
+        if (tmp < 0) tmp = 0;
+        top = (std::string::size_type)tmp;
+    }
+}
+
+
+void ViewPort::calculateTopLeft(std::string::size_type l, std::string::size_type h, std::string::size_type vpc, std::string::size_type vpr, bool isScreen)
+{
+    // let target a 20 rows by 26 cols, for now
+    // 6 14 6 for cols 
+    // 7 6 7 for rows
+    struct point pnt{1, 1};
+    if (!isScreen) pnt = gameref.getMainCharacter()->getCurrentPoint();
+   
+    // pnt row col is 1 based, a relic from the tui winsize being 1 based
+    if (vpc >= l)
+    {
+        left = 0;
+    }
+    else if (pnt.col - 1 >= (int)l - 6 - 14)
+    {
+        left = l - vpc;
+    }
+    else if (pnt.col - 1 <= 20)
+    {
+        left = 0;
+    }
+    else
+    {
+        // can either be on 6 or on 6 + 14, depending on previous position
+        // but lets initialize it to 6 for now
+        left = (std::string::size_type)pnt.col - 1 - 6;
+    }
+
+    if (vpr >= h)
+    {
+        top = 0;
+    }
+    else if (pnt.row - 1 >= (int)h - 7 - 6)
+    {
+        top = h - vpr;
+    }
+    else if (pnt.row - 1 <= 13)
+    {
+        top = 0;
+    }
+    else
+    {
+        top = (std::string::size_type)pnt.row - 1 - 7;
+    }
+}
+
 void ViewPort::draw()
 {
     const std::string* pstr = nullptr;
@@ -556,7 +683,8 @@ void ViewPort::draw()
     if (gameref.isGameCompleted())
     {
         pstr = &levelscompletedscreen;
-    } else if (gameref.isLivesDepleted())
+    }
+    else if (gameref.isLivesDepleted())
     {
         pstr = &livesdepletedscreen;
     }
@@ -564,70 +692,36 @@ void ViewPort::draw()
     {
         pstr = &playerdeadscreen;
     }
+    else if (gameref.isLevelComplete())
+    {
+        pstr = &levelcompletescreen;
+    }
     else
     {
         isScreen = false;
         pstr = &(gameref.getGameState());
     }
 
-    const std::string& cur = *pstr;
+    if (isScreen)
+    {
+        shouldReset = true;
+    }
 
-    // let target a 20 rows by 26 cols, for now
-    // 6 14 6 for cols 
-    // 7 6 7 for rows
-    //
-    // BE CAREFUL WE ARE USING LONG UNSIGNED INTS HERE, SUBTRACTING FROM ZERO WILL OVERFLOW TO A HUGE INT
+    const std::string& cur = *pstr;
     const std::string::size_type l = isScreen ? 26ul : gameref.getCurrentLevelRowLength(); // if this is n, it means theres n + 1 characters in the str per row, the + 1 being the \n character
     const std::string::size_type h = isScreen ? 20ul : gameref.getCurrentLevelHeight(); // if this is n, it means theres n lines;
 
     const std::string::size_type vpc = std::min(l, 26ul);
     const std::string::size_type vpr = std::min(h, 20ul);
-    std::string::size_type bc = 0;
-    std::string::size_type br = 0;
-    
-    struct point pnt{1, 1};
-    if (!isScreen) pnt = gameref.getMainCharacter()->getCurrentPoint();
-   
-    // pnt row col is 1 based, a relic from the tui winsize being 1 based
-    if (vpc >= l)
+    if (shouldReset)
     {
-        bc = 0;
+        calculateTopLeft(l, h, vpc, vpr, isScreen);
+        shouldReset = false;
     }
-    else if (pnt.col - 1 >= (int)l - 6 - 14)
-    {
-        bc = l - vpc;
-    }
-    else if (pnt.col - 1 <= 20)
-    {
-        bc = 0;
-    }
-    else
-    {
-        // can either be on 6 or on 6 + 14, depending on previous position
-        // but lets initialize it to 6 for now
-        bc = (std::string::size_type)pnt.col - 1 - 6;
-    }
+    else updateTopLeft(l, h, vpc, vpr);
 
-    if (vpr >= h)
-    {
-        br = 0;
-    }
-    else if (pnt.row - 1 >= (int)h - 7 - 6)
-    {
-        br = h - vpr;
-    }
-    else if (pnt.row - 1 <= 13)
-    {
-        br = 0;
-    }
-    else
-    {
-        br = (std::string::size_type)pnt.row - 1 - 7;
-    }
-
-    std::string sv{cur.substr(br * (l + 1))}; // why wont string_view work here ?
-    // when we put movement this will become more complicated;
-    std::string buffer{sv.substr(bc, vpc)};
+    std::string sv{cur.substr(top * (l + 1))}; // why wont string_view work here ?
+    std::string buffer{sv.substr(left, vpc)};
     //reserve?
     //
     //this i is supposed to point to the first \n char after the line we just initialized the buffer with
@@ -638,7 +732,7 @@ void ViewPort::draw()
         if (sv[i] == '\n' && i + 1 < sv.size())
         {
             buffer += '\n';
-            buffer += sv.substr(i + 1 + bc, vpc);
+            buffer += sv.substr(i + 1 + left, vpc);
         }
         else
         {
@@ -683,7 +777,6 @@ void Game::initLevel(int level)
                             {
                                 ++coinnumber;
                                 Coin* c = new Coin({rown, coln});
-                                std::cerr << "coin " << rown << ' ' << coln << '\n';
                                 characters.push_back(c);
                                 buffer += '.';
                                 break;
@@ -691,7 +784,6 @@ void Game::initLevel(int level)
                         case '=':
                             {
                                 Lava* c = new Lava({rown, coln}, 0, 1, false);
-                                std::cerr << "Lava " << rown << ' ' << coln << '\n';
                                 characters.push_back(c);
                                 buffer += '.';
                                 break;
@@ -699,7 +791,6 @@ void Game::initLevel(int level)
                         case '|':
                             {
                                 Lava* c = new Lava({rown, coln}, 1, 0, false);
-                                std::cerr << "Lava " << rown << ' ' << coln << '\n';
                                 characters.push_back(c);
                                 buffer += '.';
                                 break;
@@ -707,7 +798,6 @@ void Game::initLevel(int level)
                         case 'v':
                             {
                                 Lava* c = new Lava({rown, coln}, 1, 0, true);
-                                std::cerr << "Lava " << rown << ' ' << coln << '\n';
                                 characters.push_back(c);
                                 buffer += '.';
                                 break;
@@ -715,7 +805,6 @@ void Game::initLevel(int level)
                         case '@':
                             {
                                 Player* c = new Player({rown, coln});
-                                std::cerr << "main character " << rown << ' ' << coln << '\n';
                                 maincharacter = c;
                                 characters.push_back(c);
                                 buffer += '.';
@@ -778,6 +867,7 @@ void Game::setInitialState()
     currentLevel = 1;
     livesleft = 3;
     playerdead = false;
+    lasttick = std::chrono::steady_clock::time_point{};
 }
 
 void Game::restartGame()
@@ -805,6 +895,11 @@ bool Game::isLivesDepleted()
 bool Game::isGameCompleted()
 {
     return (std::string_view::size_type)currentLevel == levels.size() && coinsleft <= 0 && !playerdead;
+}
+
+bool Game::isLevelComplete()
+{
+    return coinsleft <= 0;
 }
 
 Game::Game()
@@ -1107,7 +1202,10 @@ void Game::paintCharactersInGameState()
         }
 
         std::string::size_type index = (std::string::size_type)(i);
-        if (index >= gamestate.length()) {} // BIG ERROR, handle it
+        if (index >= gamestate.length())
+        {
+            std::cerr << "error in paintCharactersInGameState() fn, index greater than gamestate length, index: " << index << " length: " << gamestate.length() << '\n';
+        } // BIG ERROR, handle it
         else
         {
             switch(ptr->getType())
@@ -1197,9 +1295,7 @@ void Game::updateGameState()
                ) // player collision with static or dynamic lava or dynamic lava collision with player
             {
                 livesleft--;
-                endGame();
                 setPlayerDead(true);
-                return;
             }
 
             if (ptrtype == CharacterType::Lava && gamestate[(std::string::size_type)destIndex] == '+') // dynamic lava collision with static lava
@@ -1231,17 +1327,16 @@ void Game::updateGameState()
                 {
                     cptr->setConsumed(true);
                     coinsleft--;
-                    if (coinsleft <= 0)
-                    {
-                        if (coinsleft < 0) std::cerr << "invalid coinsleft number " << coinsleft << '\n';
-                        progressLevel();
-                        // could also put a level complete screen, same as dead, etc
-                        return; // ??
-                    }
+                    if (coinsleft < 0) std::cerr << "invalid coinsleft number " << coinsleft << '\n';
                 }
             }
             //rest later
             ptr->setCurrentPoint(dest.row, dest.col);
+            if (isPlayerDead() || coinsleft <= 0)
+            {
+                endGame();
+                return;
+            }
         }
     }
     paintCharactersInGameState();
@@ -1257,16 +1352,21 @@ Game::~Game()
 
 void Game::consumeKey(char c)
 {
-    if (isGameCompleted() || isLivesDepleted())
+    if ((int)c == 13) // enter key
     {
-        std::cerr << "attempting to restartGame()\n";
-        restartGame();
-    }
-    else if (isPlayerDead())
-    {
-        std::cerr << "attempting to restartLevel()\n";
-        setPlayerDead(false);
-        restartLevel();
+        if (isGameCompleted() || isLivesDepleted())
+        {
+            restartGame();
+        }
+        else if (isLevelComplete())
+        {
+            progressLevel();
+        }
+        else if (isPlayerDead())
+        {
+            setPlayerDead(false);
+            restartLevel();
+        }
     }
     else if (maincharacter) maincharacter->consumeKeyPress(c);
 }
@@ -1366,7 +1466,8 @@ void Screen::draw(const std::string& str)
     else if (previousframe.size() != str.size())
     {
         // hehehe error here probably
-        std::cerr << "previous frame size not equal to current frame size, mostly happens when level changes, did level change ?";
+        std::cerr << "previous frame size not equal to current frame size, mostly happens when level changes, did level change ?\n";
+        clearScreen();
         tmp += "\033[H";
         tmp += convertToScreenStr(str);
     }
@@ -1467,7 +1568,7 @@ Screen::Screen(): winrows{}, wincols{}, originalTerminal{}, previousframe{}, sca
     write(STDOUT_FILENO, "\033[48;5;244m", 11);
     clearScreen();
 
-    std::cerr << winrows << ' ' << wincols << ' ' << scale << std::endl;
+    std::cerr <<"window rows and cols: " << winrows << ' ' << wincols << ' ' << scale << std::endl;
 }
 
 Screen::~Screen()
