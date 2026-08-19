@@ -458,6 +458,10 @@ class ViewPort
         Game& gameref;
         std::string::size_type top{0};
         std::string::size_type left{0};
+        // this shouldReset variable is under utilized, impl was a bit complicated,
+        // it should be set whenever a we progress a level, but where?
+        // at the moment, we rely on updateTopLeft to realize that the main character is not in viewport
+        // then to call calculateTopLeft to update the view port
         bool shouldReset{true};
 
         const std::string playerdeadscreen{"\
@@ -602,13 +606,13 @@ void ViewPort::updateTopLeft(std::string::size_type l, std::string::size_type h,
 
     if (pnt.col - 1 > tmp + 6 + 14)
     {
-        tmp += (pnt.col - 1) - (tmp + 6 + 14); 
+        tmp += (pnt.col - 1) - (tmp + 6 + 14);
         if (tmp > (int)(l - vpc)) tmp = (int)(l - vpc);
         left = (std::string::size_type)tmp;
     }
     else if (pnt.col - 1 - tmp < 6)
     {
-        tmp -= (tmp + 6) - (pnt.col - 1); 
+        tmp -= (tmp + 6) - (pnt.col - 1);
         if (tmp < 0) tmp = 0;
         left = (std::string::size_type)tmp;
     }
@@ -617,7 +621,7 @@ void ViewPort::updateTopLeft(std::string::size_type l, std::string::size_type h,
 
     if (pnt.row - 1 > tmp + 7 + 6)
     {
-        tmp += (pnt.row - 1) - (tmp + 7 + 6); 
+        tmp += (pnt.row - 1) - (tmp + 7 + 6);
         if (tmp > (int)(h - vpr)) tmp = (int)(h - vpr);
         top = (std::string::size_type)tmp;
     }
