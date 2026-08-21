@@ -7,7 +7,9 @@ has some known issues ( and likely some unknown ones ) ( to me )
 
 will not compile on windows ( probably )
 
-`g++ src/main.cpp` 
+```
+make
+```
 to compile on linux cli, if you have g++
 
 should work on most terminal emulators
