@@ -583,16 +583,45 @@ int main()
     ViewPort vp{S, G};
     vp.draw();
     char c = 0;
+
+    std::vector<std::chrono::steady_clock::duration> consumetime{};
+    std::vector<std::chrono::steady_clock::duration> updatestatetime{};
+    std::vector<std::chrono::steady_clock::duration> drawtime{};
     for (;;)
     {
         if (read(STDOUT_FILENO, &c, 1) != 1) {}
         else {
             if (c == 'q') break;
+            auto t1 = std::chrono::steady_clock::now();
             G.consumeKey(c);
+            auto t2 = std::chrono::steady_clock::now();
+            consumetime.push_back(t2 - t1);
         }
+        auto t1 = std::chrono::steady_clock::now();
         G.updateGameState();
+        auto t2 = std::chrono::steady_clock::now();
+        updatestatetime.push_back(t2 - t1);
+
+
+        auto t3 = std::chrono::steady_clock::now();
         vp.draw();
+        auto t4 = std::chrono::steady_clock::now();
+        drawtime.push_back(t4 - t3);
     }
+
+    std::chrono::steady_clock::duration total{};
+    for (auto t : consumetime) total += t;
+    std::cerr << "average time to run, Game::consumeKey(char) in milliseconds: " << std::chrono::duration<double, std::milli>(total / consumetime.size()).count() << std::endl;
+    total = std::chrono::steady_clock::duration{};
+
+    for (auto t : updatestatetime) total += t;
+    std::cerr << "average time to run, Game::updateGameState() in milliseconds: " << std::chrono::duration<double, std::milli>(total / updatestatetime.size()).count() << std::endl;
+    total = std::chrono::steady_clock::duration{};
+
+    for (auto t : drawtime) total += t;
+    std::cerr << "average time to run, ViewPort::draw() in milliseconds: " << std::chrono::duration<double, std::milli>(total / drawtime.size()).count() << std::endl;
+    total = std::chrono::steady_clock::duration{};
+
     return 0;
 }
 
