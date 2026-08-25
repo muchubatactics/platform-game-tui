@@ -138,13 +138,18 @@ class Player: public Character
     private:
         int verticalforce{};
         int horizontalforce{};
-        float gravity{9.8f};
+        std::chrono::steady_clock::time_point jumptime{};
+        const std::chrono::milliseconds jumpduration{500};
+        const std::chrono::milliseconds jumpstep{100};
+
         static inline const std::string str{"\033[48;5;21m \033[48;5;244m"};
         static inline CharacterType ctype = CharacterType::Player;
 
     public:
         Player(struct point start);
-        void consumeKeyPress(char);
+        void consumeKeyPress(char, bool);
+        bool isJumping();
+        int jumpby();
         // overides
         struct point getNextPoint() override;
         const std::string& getStrRepresentation() override;
@@ -159,6 +164,13 @@ Player::Player(struct point start):
 {
 }
 
+bool Player::isJumping()
+{
+    if (jumptime == std::chrono::steady_clock::time_point{}) return false;
+    if ((std::chrono::steady_clock::now() - jumptime) >= jumpduration) return false;
+    return true;
+}
+
 const std::string& Player::getStrRepresentation()
 {
     return str;
@@ -169,21 +181,30 @@ const std::string& Player::getStr()
     return str;
 }
 
+int Player::jumpby()
+{
+    static std::chrono::steady_clock::time_point lasttick{std::chrono::steady_clock::now()};
+    std::chrono::steady_clock::time_point tnow{std::chrono::steady_clock::now()};
+
+    int value = 0;
+    if (tnow - lasttick > jumpstep)
+    {
+        value = 1;
+        lasttick = tnow;
+    }
+
+    if (isJumping()) value *= -1;
+
+    return value;
+}
+
 struct point Player::getNextPoint()
 {
     // naive impl
     struct point cur = getCurrentPoint();
-    if (verticalforce)
-    {
-        if (verticalforce > 0)
-        {
-            verticalforce--;
-            --cur.row;
-        } else {
-            verticalforce++;
-            ++cur.row;
-        }
-    }
+
+    cur.row += jumpby();
+
     if (horizontalforce)
     {
         if (horizontalforce > 0)
@@ -198,18 +219,17 @@ struct point Player::getNextPoint()
     return cur;
 }
 
-void Player::consumeKeyPress(char c)
+void Player::consumeKeyPress(char c, bool canJump)
 {
     switch(c)
     {
-        case 'w': 
-            verticalforce++;
+        case 'w':
+            if (canJump) jumptime = std::chrono::steady_clock::now();
             break;
         case 'a':
             horizontalforce--;
             break;
         case 's':
-            verticalforce--;
             break;
         case 'd':
             horizontalforce++;
@@ -438,6 +458,7 @@ class Game
         bool isLevelComplete();
 
         void setPlayerDead(bool);
+        bool canCharacterJump();
 
         //disable copying
         Game(const Game&) = delete;
@@ -828,6 +849,20 @@ void Game::initLevel(int level)
     std::cerr << "width, height = " << currentLevelRowLength << ' ' << currentLevelHeight << '\n';
     //draw the characters; maybe;
     paintCharactersInGameState();
+}
+
+bool Game::canCharacterJump()
+{
+    int idx = getCharacterIndexInGameState(maincharacter); // upcasting Player* to Character*
+    if (idx < 0) return false;
+    std::string::size_type indexBelow = (std::string::size_type)idx + currentLevelRowLength + 1;
+    if (indexBelow >= levels[(std::string::size_type)(currentLevel - 1)].size())
+    {
+        std::cerr << "error in canCharacterJump(), index below greater than level length\n";
+        return false;
+    }
+
+    return levels[(std::string::size_type)(currentLevel - 1)][indexBelow] == '#';
 }
 
 void Game::restartLevel()
@@ -1372,7 +1407,7 @@ void Game::consumeKey(char c)
             restartLevel();
         }
     }
-    else if (maincharacter) maincharacter->consumeKeyPress(c);
+    else if (maincharacter) maincharacter->consumeKeyPress(c, canCharacterJump());
 }
 
 const std::string Screen::convertToScreenStr(std::string_view sv)
