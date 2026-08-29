@@ -1,14 +1,15 @@
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <sys/ioctl.h>
 #include <sys/poll.h>
 #include <termios.h>
 #include <unistd.h>
-#include <iostream>
 #include <utility>
-#include <string>
-#include <sys/ioctl.h>
 #include <vector>
-#include <string_view>
-#include <fstream>
-#include <chrono>
 
 // for setting up std::cerr as the way to write into my logFile
 class Logger
@@ -423,15 +424,15 @@ class Game
     private:
         std::vector<std::string_view> gameLevels{};
         int currentLevel{};
-        std::vector<Character*> gameCharacters{};
+        std::vector<std::unique_ptr<Character>> gameCharacters{};
         std::string gameState{};
         int coinsRemaining{};
         int livesRemaining{};
         std::string::size_type currentLevelWidth{};
         std::string::size_type currentLevelHeight{};
         Player* mainCharacter{nullptr};
-        
-        bool playerDead{false}; 
+
+        bool playerDead{false};
 
         //time
         std::chrono::steady_clock::time_point lastTick{};
@@ -610,7 +611,7 @@ int main()
                 consumetime.push_back(t2 - t1);
             }
         }
-        
+
         if (c == 'q') break;
 
         auto t1 = std::chrono::steady_clock::now();
@@ -703,11 +704,11 @@ void ViewPort::updateTopLeft(std::string::size_type l, std::string::size_type h,
 void ViewPort::calculateTopLeft(std::string::size_type l, std::string::size_type h, std::string::size_type vpc, std::string::size_type vpr, bool isScreen)
 {
     // let target a 20 rows by 26 cols, for now
-    // 6 14 6 for cols 
+    // 6 14 6 for cols
     // 7 6 7 for rows
     struct point pnt{1, 1};
     if (!isScreen) pnt = gameRef.getMainCharacter()->getCurrentPoint();
-   
+
     // pnt row col is 1 based, a relic from the tui winsize being 1 based
     if (vpc >= l)
     {
@@ -823,7 +824,7 @@ void Game::initLevel(int level)
 
     std::string buffer{};
     //reserve buffer ?
-    
+
     std::string_view thislevel = gameLevels[(std::string_view::size_type)level - 1];
     int rown = 1;
     int coln = 1;
@@ -846,39 +847,39 @@ void Game::initLevel(int level)
                         case 'o':
                             {
                                 ++coinnumber;
-                                Coin* c = new Coin({rown, coln});
-                                gameCharacters.push_back(c);
+                                std::unique_ptr<Coin> c{std::make_unique<Coin>(point{rown, coln})};
+                                gameCharacters.push_back(std::move(c));
                                 buffer += '.';
                                 break;
                             }
                         case '=':
                             {
-                                Lava* c = new Lava({rown, coln}, 0, 1, false);
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Lava> c{std::make_unique<Lava>(point{rown, coln}, 0, 1, false)};
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         case '|':
                             {
-                                Lava* c = new Lava({rown, coln}, 1, 0, false);
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Lava> c{std::make_unique<Lava>(point{rown, coln}, 1, 0, false)};
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         case 'v':
                             {
-                                Lava* c = new Lava({rown, coln}, 1, 0, true);
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Lava> c{std::make_unique<Lava>(point{rown, coln}, 1, 0, true)};
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         case '@':
                             {
-                                Player* c = new Player({rown, coln});
-                                mainCharacter = c;
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Player> c{std::make_unique<Player>(point{rown, coln})};
+                            mainCharacter = c.get(); // just an observer; never owns the memory
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         default:
                             buffer += '.';
@@ -919,14 +920,10 @@ void Game::restartLevel()
 
 void Game::endGame()
 {
-    // free mem for old gameCharacters
-    for (Character* ptr : gameCharacters)
-    {
-        delete ptr;
-    }
-
+    // automatically clears the memory for the characters in the
+    // vector via each character object's destructor
+    gameCharacters.clear();
     mainCharacter = nullptr; // no free because its part of the gameCharacters vector, already freed
-    gameCharacters = {};
 }
 
 void Game::progressLevel()
@@ -1229,7 +1226,7 @@ int Game::getCharacterIndexInGameState(int row, int col)
     // we are taking advantage of all lines being of equal length;
     // reducing it to (n + 1) * (r - 1) + (c - 1)
     std::string::size_type n = currentLevelWidth;
-    struct point pos = {row, col}; 
+    struct point pos = {row, col};
 
     if (!pos.row || !pos.col)
     {
@@ -1255,9 +1252,9 @@ void Game::paintCharactersInGameState()
 {
     // remove existing gameCharacters
     removeCharactersFromGameState();
-    for (Character* ptr : gameCharacters)
+    for (const auto &ptr : gameCharacters)
     {
-        int i = getCharacterIndexInGameState(ptr);
+        int i = getCharacterIndexInGameState(ptr.get());
         if (i == -1)
         {
             continue; // invalid index
@@ -1301,7 +1298,7 @@ void Game::updateGameState()
 
     if (shouldUpdateLava) lastTick = tnow;
 
-    for (Character* ptr : gameCharacters)
+    for (const auto &ptr : gameCharacters)
     {
         struct point dest = ptr->getNextPoint();
         CharacterType ptrtype = ptr->getType();
@@ -1418,12 +1415,12 @@ void Game::updateGameState()
                 // find coin
                 // consume it
                 Coin* cptr = nullptr;
-                for (Character* ptr: gameCharacters)
+                for (const auto &ptr : gameCharacters)
                 {
                     struct point cpos = ptr->getCurrentPoint();
                     if (cpos.row == dest.row && cpos.col == dest.col && ptr->getType() == CharacterType::Coin)
                     {
-                        cptr = static_cast<Coin*>(ptr);
+                        cptr = static_cast<Coin *>(ptr.get());
                     }
                 }
 
@@ -1451,13 +1448,7 @@ void Game::updateGameState()
     paintCharactersInGameState();
 }
 
-Game::~Game()
-{
-    for (Character* c : gameCharacters)
-    {
-        delete c;
-    }
-}
+Game::~Game() = default; // gameCharacters (vector of unique ptrs) cleans itself up
 
 void Game::consumeKey(char c)
 {
