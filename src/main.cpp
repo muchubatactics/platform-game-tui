@@ -60,11 +60,6 @@ enum class CharacterType
 
 class Character
 {
-    private:
-        const struct point startingPoint;
-        struct point currentPoint;
-        const struct point endingPoint;
-
     public:
         Character(struct point, struct point);
         Character(struct point);
@@ -78,6 +73,11 @@ class Character
         virtual void onLavaCollision();
         void setCurrentPoint(int, int);
         const struct point getStartingPoint() const;
+
+    private:
+        const struct point startingPoint;
+        struct point currentPoint;
+        const struct point endingPoint;
 };
 
 Character::Character(struct point start, struct point end):
@@ -139,15 +139,6 @@ void Character::setCurrentPoint(int row, int col)
 
 class Player: public Character
 {
-    private:
-        int horizontalForce{};
-        std::chrono::steady_clock::time_point jumpTime{};
-        const std::chrono::milliseconds jumpDuration{500};
-        const std::chrono::milliseconds jumpStep{100};
-
-        static inline const std::string str{"\033[48;5;21m \033[48;5;244m"};
-        static inline CharacterType ctype = CharacterType::Player;
-
     public:
         Player(struct point start);
         void consumeKeyPress(char, bool);
@@ -163,6 +154,15 @@ class Player: public Character
 
         //static
         static const std::string& getStr();
+
+    private:
+        int horizontalForce{};
+        std::chrono::steady_clock::time_point jumpTime{};
+        const std::chrono::milliseconds jumpDuration{500};
+        const std::chrono::milliseconds jumpStep{100};
+
+        static inline const std::string str{"\033[48;5;21m \033[48;5;244m"};
+        static inline CharacterType ctype = CharacterType::Player;
 };
 
 Player::Player(struct point start):
@@ -257,13 +257,6 @@ void Player::consumeKeyPress(char c, bool canJump)
 
 class Lava: public Character
 {
-    private:
-        int xSpeed;
-        int ySpeed;
-        bool resets;
-        static inline const std::string str{"\033[48;5;88m \033[48;5;244m"};
-        static inline const CharacterType ctype = CharacterType::Lava;
-
     public:
         Lava(struct point s, int v, int h, bool resets);
 
@@ -276,6 +269,13 @@ class Lava: public Character
 
         //static
         static const std::string& getStr();
+
+    private:
+        int xSpeed;
+        int ySpeed;
+        bool resets;
+        static inline const std::string str{"\033[48;5;88m \033[48;5;244m"};
+        static inline const CharacterType ctype = CharacterType::Lava;
 };
 
 Lava::Lava(struct point start, int vertical, int horizontal, bool resets):
@@ -333,11 +333,6 @@ const std::string& Lava::getStr()
 
 class Coin: public Character
 {
-    private:
-        bool consumed{false};
-        static inline const std::string str{"\033[48;5;208m \033[48;5;244m"};
-        static inline const CharacterType ctype = CharacterType::Coin;
-
     public:
         Coin(struct point start);
         void setConsumed(bool);
@@ -350,6 +345,11 @@ class Coin: public Character
 
         //static
         static const std::string& getStr();
+
+    private:
+        bool consumed{false};
+        static inline const std::string str{"\033[48;5;208m \033[48;5;244m"};
+        static inline const CharacterType ctype = CharacterType::Coin;
 };
 
 Coin::Coin(struct point start):
@@ -421,23 +421,6 @@ class Screen
 
 class Game
 {
-    private:
-        std::vector<std::string_view> gameLevels{};
-        int currentLevel{};
-        std::vector<std::unique_ptr<Character>> gameCharacters{};
-        std::string gameState{};
-        int coinsRemaining{};
-        int livesRemaining{};
-        std::string::size_type currentLevelWidth{};
-        std::string::size_type currentLevelHeight{};
-        Player* mainCharacter{nullptr};
-
-        bool playerDead{false};
-
-        //time
-        std::chrono::steady_clock::time_point lastTick{};
-        const std::chrono::milliseconds tickDuration{200};
-
     public:
         Game();
         ~Game();
@@ -471,6 +454,23 @@ class Game
         //disable copying
         Game(const Game&) = delete;
         Game& operator=(const Game&) = delete;
+
+    private:
+        std::vector<std::string_view> gameLevels{};
+        int currentLevel{};
+        std::vector<std::unique_ptr<Character>> gameCharacters{};
+        std::string gameState{};
+        int coinsRemaining{};
+        int livesRemaining{};
+        std::string::size_type currentLevelWidth{};
+        std::string::size_type currentLevelHeight{};
+        Player *mainCharacter{nullptr};
+
+        bool playerDead{false};
+
+        // time
+        std::chrono::steady_clock::time_point lastTick{};
+        const std::chrono::milliseconds tickDuration{200};
 };
 
 class ViewPort
