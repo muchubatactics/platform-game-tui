@@ -151,12 +151,14 @@ class Player: public Character
         Player(struct point start);
         void consumeKeyPress(char, bool);
         bool isJumping();
-        int jumpby();
+        int jumpBy();
+        void stopJump();
 
         // overides
         struct point getNextPoint() override;
         const std::string& getStrRepresentation() override;
         CharacterType getType() override { return ctype; }
+        void onWallCollision() override;
 
         //static
         static const std::string& getStr();
@@ -174,6 +176,16 @@ bool Player::isJumping()
     return true;
 }
 
+void Player::stopJump()
+{
+    jumpTime = std::chrono::steady_clock::time_point{};
+}
+
+void Player::onWallCollision()
+{
+    stopJump();
+}
+
 const std::string& Player::getStrRepresentation()
 {
     return str;
@@ -184,7 +196,7 @@ const std::string& Player::getStr()
     return str;
 }
 
-int Player::jumpby()
+int Player::jumpBy()
 {
     static std::chrono::steady_clock::time_point lastTick{std::chrono::steady_clock::now()};
     std::chrono::steady_clock::time_point tnow{std::chrono::steady_clock::now()};
@@ -206,7 +218,7 @@ struct point Player::getNextPoint()
     // naive impl
     struct point cur = getCurrentPoint();
 
-    cur.row += jumpby();
+    cur.row += jumpBy();
 
     if (horizontalForce)
     {
@@ -615,7 +627,7 @@ int main()
 
     std::chrono::steady_clock::duration total{};
     for (auto t : consumetime) total += t;
-    std::cerr << "average time to run, Game::consumeKey(char) in milliseconds: " << std::chrono::duration<double, std::milli>(total / consumetime.size()).count() << std::endl;
+    if(consumetime.size()) std::cerr << "average time to run, Game::consumeKey(char) in milliseconds: " << std::chrono::duration<double, std::milli>(total / consumetime.size()).count() << std::endl;
     total = std::chrono::steady_clock::duration{};
 
     for (auto t : updatestatetime) total += t;
@@ -1294,6 +1306,18 @@ void Game::updateGameState()
         struct point dest = ptr->getNextPoint();
         CharacterType ptrtype = ptr->getType();
 
+        // cancel character trying to go down, if its standing on wall;
+        if (ptrtype == CharacterType::Player)
+        {
+            struct point cur = ptr->getCurrentPoint();
+            int belowIndex =  getCharacterIndexInGameState(cur.row + 1, cur.col);
+            if (belowIndex >= 0 && (std::string::size_type)belowIndex <= gameState.size())
+            {
+                if (gameState[(std::string::size_type)belowIndex] == '#' && dest.row > cur.row) dest.row = cur.row;
+                //ptr->onWallCollision();
+            }
+        }
+
         if (ptrtype == CharacterType::Coin)
         {
             // cant do anything here because the main character could be updated after the coins, then we would miss consuming them
@@ -1333,7 +1357,42 @@ void Game::updateGameState()
 
             if (gameState[(std::string::size_type)destIndex] == '#') //collision with wall
             {
-                ptr->onWallCollision();
+                if (ptrtype == CharacterType::Player)
+                {
+                    // are we jumping dest.row < cur.row ? if not, we know the wall is left or right, we just stop where we are
+                    // otherwise, we check if theres a wall in dest.col, if no wall, move there
+                    // check if theres wall in dest.row, if not move there, if there is, stop jump;
+                    struct point cur = ptr->getCurrentPoint();
+                    if (dest.row < cur.row)
+                    {
+                        int destColIndex = getCharacterIndexInGameState(cur.row, dest.col);
+                        if (destColIndex >= 0 && (std::string::size_type)destColIndex < gameState.size() && gameState[(std::string::size_type)destColIndex] != '#')
+                        {
+                            ptr->setCurrentPoint(cur.row, dest.col);
+                        }
+
+                        cur = ptr->getCurrentPoint();
+                        int destRowIndex = getCharacterIndexInGameState(dest.row, cur.col);
+                        if (destRowIndex >= 0 && (std::string::size_type)destRowIndex < gameState.size() && gameState[(std::string::size_type)destRowIndex] != '#')
+                        {
+                            struct point tmp = ptr->getCurrentPoint();
+                            ptr->setCurrentPoint(dest.row, tmp.col);
+                        }
+                        else if (destRowIndex >= 0 && (std::string::size_type)destRowIndex < gameState.size() && gameState[(std::string::size_type)destRowIndex] == '#')
+                        {
+                            ptr->onWallCollision(); // to stop jump timing stuff
+                            cur = ptr->getCurrentPoint();
+                            int newRowIndex = getCharacterIndexInGameState(cur.row + 1, cur.col);
+                            if (newRowIndex >= 0 && (std::string::size_type)newRowIndex < gameState.size() && gameState[(std::string::size_type)newRowIndex] != '#')
+                            {
+                                ptr->setCurrentPoint(cur.row + 1, cur.col);
+                            }
+                        }
+
+                    }
+                }
+                else ptr->onWallCollision();
+
                 continue;
             }
 
