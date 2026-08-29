@@ -10,7 +10,10 @@ $(TARGET): $(SRC)
 	@$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
 
 debug:
-	@$(CXX) $(CXXFLAGS) -ggdb3 $(SRC) -o $(TARGET)
+	@$(CXX) -Wpedantic $(CXXFLAGS) -ggdb3 $(SRC) -o $(TARGET)
+
+format:
+	@git diff -U0 | clang-format-diff -p1 -i -style "microsoft"
 
 clean:
 	@rm -f $(TARGET)
