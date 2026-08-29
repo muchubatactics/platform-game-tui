@@ -1530,7 +1530,7 @@ const std::string Screen::convertToScreenStr(std::string_view sv)
 void Screen::writeError(std::string_view str)
 {
     moveCursor(winrows, 0);
-    write(STDOUT_FILENO, str.data(), str.size());
+    std::ignore = write(STDOUT_FILENO, str.data(), str.size());
 }
 
 void Screen::draw(const std::string& str)
@@ -1604,7 +1604,7 @@ void Screen::draw(const std::string& str)
         
     }
 
-    write(STDOUT_FILENO, tmp.c_str(), tmp.size());
+    std::ignore = write(STDOUT_FILENO, tmp.c_str(), tmp.size());
     previousFrame = str;
 }
 
@@ -1643,7 +1643,7 @@ Screen::Screen(): winrows{}, wincols{}, originalTerminal{}, previousFrame{}, sca
 
     //tmp
     //paint whole screen white-ish
-    write(STDOUT_FILENO, "\033[48;5;244m", 11);
+    std::ignore = write(STDOUT_FILENO, "\033[48;5;244m", 11);
     clearScreen();
 
     std::cerr <<"window rows and cols: " << winrows << ' ' << wincols << ' ' << scale << std::endl;
@@ -1658,19 +1658,19 @@ Screen::~Screen()
 
 void Screen::clearScreen()
 {
-    write(STDOUT_FILENO, "\033[2J", 4);
+    std::ignore = write(STDOUT_FILENO, "\033[2J", 4);
     // check if 4 chars are written to error handle
 }
 
 void Screen::hideCursor()
 {
-    write(STDOUT_FILENO, "\033[?25l", 6); 
+    std::ignore = write(STDOUT_FILENO, "\033[?25l", 6);
     // handle error
 }
 
 void Screen::restoreCursor()
 {
-    write(STDOUT_FILENO, "\033[?25h", 6);
+    std::ignore = write(STDOUT_FILENO, "\033[?25h", 6);
     // handle error
 }
 
@@ -1681,7 +1681,7 @@ void Screen::moveCursor(int row, int col)
 {
     std::string str{"\033["};
     str += std::to_string(row) + ';' + std::to_string(col) + 'H';
-    write(STDOUT_FILENO, str.c_str(), str.length());
+    std::ignore = write(STDOUT_FILENO, str.c_str(), str.length());
 }
 
 void Screen::cursorToTopLeft() { moveCursor(1,1); }
@@ -1709,13 +1709,13 @@ bool Screen::disableRawMode()
 
 void Screen::enableAltBuffer()
 {
-    write(STDOUT_FILENO, "\033[?1049h", 8);
+    std::ignore = write(STDOUT_FILENO, "\033[?1049h", 8);
     // handle error
 }
 
 void Screen::disableAltBuffer()
 {
-    write(STDOUT_FILENO, "\033[?1049l", 8);
+    std::ignore = write(STDOUT_FILENO, "\033[?1049l", 8);
     // handle error
 }
 
