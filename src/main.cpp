@@ -1,3 +1,4 @@
+#include <sys/poll.h>
 #include <termios.h>
 #include <unistd.h>
 #include <iostream>
@@ -583,14 +584,23 @@ int main()
     std::vector<std::chrono::steady_clock::duration> drawtime{};
     for (;;)
     {
-        if (read(STDOUT_FILENO, &c, 1) != 1) {}
-        else {
-            if (c == 'q') break;
-            auto t1 = std::chrono::steady_clock::now();
-            G.consumeKey(c);
-            auto t2 = std::chrono::steady_clock::now();
-            consumetime.push_back(t2 - t1);
+        struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+        int ready = poll(&pfd, 1, 20);
+
+        if (ready > 0 && (pfd.events & POLLIN))
+        {
+            while(read(STDIN_FILENO, &c, 1) == 1)
+            {
+                if (c == 'q') break;
+                auto t1 = std::chrono::steady_clock::now();
+                G.consumeKey(c);
+                auto t2 = std::chrono::steady_clock::now();
+                consumetime.push_back(t2 - t1);
+            }
         }
+        
+        if (c == 'q') break;
+
         auto t1 = std::chrono::steady_clock::now();
         G.updateGameState();
         auto t2 = std::chrono::steady_clock::now();
@@ -1627,7 +1637,7 @@ bool Screen::enableRawMode()
     raw.c_lflag &= ~static_cast<tcflag_t>((ECHO | ICANON | ISIG | IEXTEN));
     raw.c_cflag |= (CS8);
     raw.c_cc[VMIN] = 0; //minimum gameCharacters before read return
-    raw.c_cc[VTIME] = 0; //time after which read returns if no input
+    raw.c_cc[VTIME] = 0; //time after which read returns if no input, 1 means 100ms
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) return false;
     return true;
