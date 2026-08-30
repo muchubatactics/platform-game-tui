@@ -1,14 +1,15 @@
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <sys/ioctl.h>
 #include <sys/poll.h>
 #include <termios.h>
 #include <unistd.h>
-#include <iostream>
 #include <utility>
-#include <string>
-#include <sys/ioctl.h>
 #include <vector>
-#include <string_view>
-#include <fstream>
-#include <chrono>
 
 // for setting up std::cerr as the way to write into my logFile
 class Logger
@@ -59,11 +60,6 @@ enum class CharacterType
 
 class Character
 {
-    private:
-        const struct point startingPoint;
-        struct point currentPoint;
-        const struct point endingPoint;
-
     public:
         Character(struct point, struct point);
         Character(struct point);
@@ -77,6 +73,11 @@ class Character
         virtual void onLavaCollision();
         void setCurrentPoint(int, int);
         const struct point getStartingPoint() const;
+
+    private:
+        const struct point startingPoint;
+        struct point currentPoint;
+        const struct point endingPoint;
 };
 
 Character::Character(struct point start, struct point end):
@@ -138,15 +139,6 @@ void Character::setCurrentPoint(int row, int col)
 
 class Player: public Character
 {
-    private:
-        int horizontalForce{};
-        std::chrono::steady_clock::time_point jumpTime{};
-        const std::chrono::milliseconds jumpDuration{500};
-        const std::chrono::milliseconds jumpStep{100};
-
-        static inline const std::string str{"\033[48;5;21m \033[48;5;244m"};
-        static inline CharacterType ctype = CharacterType::Player;
-
     public:
         Player(struct point start);
         void consumeKeyPress(char, bool);
@@ -162,6 +154,15 @@ class Player: public Character
 
         //static
         static const std::string& getStr();
+
+    private:
+        int horizontalForce{};
+        std::chrono::steady_clock::time_point jumpTime{};
+        const std::chrono::milliseconds jumpDuration{500};
+        const std::chrono::milliseconds jumpStep{100};
+
+        static inline const std::string str{"\033[48;5;21m \033[48;5;244m"};
+        static inline CharacterType ctype = CharacterType::Player;
 };
 
 Player::Player(struct point start):
@@ -256,13 +257,6 @@ void Player::consumeKeyPress(char c, bool canJump)
 
 class Lava: public Character
 {
-    private:
-        int xSpeed;
-        int ySpeed;
-        bool resets;
-        static inline const std::string str{"\033[48;5;88m \033[48;5;244m"};
-        static inline const CharacterType ctype = CharacterType::Lava;
-
     public:
         Lava(struct point s, int v, int h, bool resets);
 
@@ -275,6 +269,13 @@ class Lava: public Character
 
         //static
         static const std::string& getStr();
+
+    private:
+        int xSpeed;
+        int ySpeed;
+        bool resets;
+        static inline const std::string str{"\033[48;5;88m \033[48;5;244m"};
+        static inline const CharacterType ctype = CharacterType::Lava;
 };
 
 Lava::Lava(struct point start, int vertical, int horizontal, bool resets):
@@ -332,11 +333,6 @@ const std::string& Lava::getStr()
 
 class Coin: public Character
 {
-    private:
-        bool consumed{false};
-        static inline const std::string str{"\033[48;5;208m \033[48;5;244m"};
-        static inline const CharacterType ctype = CharacterType::Coin;
-
     public:
         Coin(struct point start);
         void setConsumed(bool);
@@ -349,6 +345,11 @@ class Coin: public Character
 
         //static
         static const std::string& getStr();
+
+    private:
+        bool consumed{false};
+        static inline const std::string str{"\033[48;5;208m \033[48;5;244m"};
+        static inline const CharacterType ctype = CharacterType::Coin;
 };
 
 Coin::Coin(struct point start):
@@ -420,23 +421,6 @@ class Screen
 
 class Game
 {
-    private:
-        std::vector<std::string_view> gameLevels{};
-        int currentLevel{};
-        std::vector<Character*> gameCharacters{};
-        std::string gameState{};
-        int coinsRemaining{};
-        int livesRemaining{};
-        std::string::size_type currentLevelWidth{};
-        std::string::size_type currentLevelHeight{};
-        Player* mainCharacter{nullptr};
-        
-        bool playerDead{false}; 
-
-        //time
-        std::chrono::steady_clock::time_point lastTick{};
-        const std::chrono::milliseconds tickDuration{200};
-
     public:
         Game();
         ~Game();
@@ -470,6 +454,23 @@ class Game
         //disable copying
         Game(const Game&) = delete;
         Game& operator=(const Game&) = delete;
+
+    private:
+        std::vector<std::string_view> gameLevels{};
+        int currentLevel{};
+        std::vector<std::unique_ptr<Character>> gameCharacters{};
+        std::string gameState{};
+        int coinsRemaining{};
+        int livesRemaining{};
+        std::string::size_type currentLevelWidth{};
+        std::string::size_type currentLevelHeight{};
+        Player *mainCharacter{nullptr};
+
+        bool playerDead{false};
+
+        // time
+        std::chrono::steady_clock::time_point lastTick{};
+        const std::chrono::milliseconds tickDuration{200};
 };
 
 class ViewPort
@@ -610,7 +611,7 @@ int main()
                 consumetime.push_back(t2 - t1);
             }
         }
-        
+
         if (c == 'q') break;
 
         auto t1 = std::chrono::steady_clock::now();
@@ -703,11 +704,11 @@ void ViewPort::updateTopLeft(std::string::size_type l, std::string::size_type h,
 void ViewPort::calculateTopLeft(std::string::size_type l, std::string::size_type h, std::string::size_type vpc, std::string::size_type vpr, bool isScreen)
 {
     // let target a 20 rows by 26 cols, for now
-    // 6 14 6 for cols 
+    // 6 14 6 for cols
     // 7 6 7 for rows
     struct point pnt{1, 1};
     if (!isScreen) pnt = gameRef.getMainCharacter()->getCurrentPoint();
-   
+
     // pnt row col is 1 based, a relic from the tui winsize being 1 based
     if (vpc >= l)
     {
@@ -823,7 +824,7 @@ void Game::initLevel(int level)
 
     std::string buffer{};
     //reserve buffer ?
-    
+
     std::string_view thislevel = gameLevels[(std::string_view::size_type)level - 1];
     int rown = 1;
     int coln = 1;
@@ -846,39 +847,39 @@ void Game::initLevel(int level)
                         case 'o':
                             {
                                 ++coinnumber;
-                                Coin* c = new Coin({rown, coln});
-                                gameCharacters.push_back(c);
+                                std::unique_ptr<Coin> c{std::make_unique<Coin>(point{rown, coln})};
+                                gameCharacters.push_back(std::move(c));
                                 buffer += '.';
                                 break;
                             }
                         case '=':
                             {
-                                Lava* c = new Lava({rown, coln}, 0, 1, false);
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Lava> c{std::make_unique<Lava>(point{rown, coln}, 0, 1, false)};
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         case '|':
                             {
-                                Lava* c = new Lava({rown, coln}, 1, 0, false);
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Lava> c{std::make_unique<Lava>(point{rown, coln}, 1, 0, false)};
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         case 'v':
                             {
-                                Lava* c = new Lava({rown, coln}, 1, 0, true);
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Lava> c{std::make_unique<Lava>(point{rown, coln}, 1, 0, true)};
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         case '@':
                             {
-                                Player* c = new Player({rown, coln});
-                                mainCharacter = c;
-                                gameCharacters.push_back(c);
-                                buffer += '.';
-                                break;
+                            std::unique_ptr<Player> c{std::make_unique<Player>(point{rown, coln})};
+                            mainCharacter = c.get(); // just an observer; never owns the memory
+                            gameCharacters.push_back(std::move(c));
+                            buffer += '.';
+                            break;
                             }
                         default:
                             buffer += '.';
@@ -919,14 +920,10 @@ void Game::restartLevel()
 
 void Game::endGame()
 {
-    // free mem for old gameCharacters
-    for (Character* ptr : gameCharacters)
-    {
-        delete ptr;
-    }
-
+    // automatically clears the memory for the characters in the
+    // vector via each character object's destructor
+    gameCharacters.clear();
     mainCharacter = nullptr; // no free because its part of the gameCharacters vector, already freed
-    gameCharacters = {};
 }
 
 void Game::progressLevel()
@@ -1229,7 +1226,7 @@ int Game::getCharacterIndexInGameState(int row, int col)
     // we are taking advantage of all lines being of equal length;
     // reducing it to (n + 1) * (r - 1) + (c - 1)
     std::string::size_type n = currentLevelWidth;
-    struct point pos = {row, col}; 
+    struct point pos = {row, col};
 
     if (!pos.row || !pos.col)
     {
@@ -1255,9 +1252,9 @@ void Game::paintCharactersInGameState()
 {
     // remove existing gameCharacters
     removeCharactersFromGameState();
-    for (Character* ptr : gameCharacters)
+    for (const auto &ptr : gameCharacters)
     {
-        int i = getCharacterIndexInGameState(ptr);
+        int i = getCharacterIndexInGameState(ptr.get());
         if (i == -1)
         {
             continue; // invalid index
@@ -1301,7 +1298,7 @@ void Game::updateGameState()
 
     if (shouldUpdateLava) lastTick = tnow;
 
-    for (Character* ptr : gameCharacters)
+    for (const auto &ptr : gameCharacters)
     {
         struct point dest = ptr->getNextPoint();
         CharacterType ptrtype = ptr->getType();
@@ -1418,12 +1415,12 @@ void Game::updateGameState()
                 // find coin
                 // consume it
                 Coin* cptr = nullptr;
-                for (Character* ptr: gameCharacters)
+                for (const auto &ptr : gameCharacters)
                 {
                     struct point cpos = ptr->getCurrentPoint();
                     if (cpos.row == dest.row && cpos.col == dest.col && ptr->getType() == CharacterType::Coin)
                     {
-                        cptr = static_cast<Coin*>(ptr);
+                        cptr = static_cast<Coin *>(ptr.get());
                     }
                 }
 
@@ -1451,13 +1448,7 @@ void Game::updateGameState()
     paintCharactersInGameState();
 }
 
-Game::~Game()
-{
-    for (Character* c : gameCharacters)
-    {
-        delete c;
-    }
-}
+Game::~Game() = default; // gameCharacters (vector of unique ptrs) cleans itself up
 
 void Game::consumeKey(char c)
 {
@@ -1530,7 +1521,7 @@ const std::string Screen::convertToScreenStr(std::string_view sv)
 void Screen::writeError(std::string_view str)
 {
     moveCursor(winrows, 0);
-    write(STDOUT_FILENO, str.data(), str.size());
+    std::ignore = write(STDOUT_FILENO, str.data(), str.size());
 }
 
 void Screen::draw(const std::string& str)
@@ -1604,7 +1595,7 @@ void Screen::draw(const std::string& str)
         
     }
 
-    write(STDOUT_FILENO, tmp.c_str(), tmp.size());
+    std::ignore = write(STDOUT_FILENO, tmp.c_str(), tmp.size());
     previousFrame = str;
 }
 
@@ -1643,7 +1634,7 @@ Screen::Screen(): winrows{}, wincols{}, originalTerminal{}, previousFrame{}, sca
 
     //tmp
     //paint whole screen white-ish
-    write(STDOUT_FILENO, "\033[48;5;244m", 11);
+    std::ignore = write(STDOUT_FILENO, "\033[48;5;244m", 11);
     clearScreen();
 
     std::cerr <<"window rows and cols: " << winrows << ' ' << wincols << ' ' << scale << std::endl;
@@ -1658,19 +1649,19 @@ Screen::~Screen()
 
 void Screen::clearScreen()
 {
-    write(STDOUT_FILENO, "\033[2J", 4);
+    std::ignore = write(STDOUT_FILENO, "\033[2J", 4);
     // check if 4 chars are written to error handle
 }
 
 void Screen::hideCursor()
 {
-    write(STDOUT_FILENO, "\033[?25l", 6); 
+    std::ignore = write(STDOUT_FILENO, "\033[?25l", 6);
     // handle error
 }
 
 void Screen::restoreCursor()
 {
-    write(STDOUT_FILENO, "\033[?25h", 6);
+    std::ignore = write(STDOUT_FILENO, "\033[?25h", 6);
     // handle error
 }
 
@@ -1681,7 +1672,7 @@ void Screen::moveCursor(int row, int col)
 {
     std::string str{"\033["};
     str += std::to_string(row) + ';' + std::to_string(col) + 'H';
-    write(STDOUT_FILENO, str.c_str(), str.length());
+    std::ignore = write(STDOUT_FILENO, str.c_str(), str.length());
 }
 
 void Screen::cursorToTopLeft() { moveCursor(1,1); }
@@ -1709,13 +1700,13 @@ bool Screen::disableRawMode()
 
 void Screen::enableAltBuffer()
 {
-    write(STDOUT_FILENO, "\033[?1049h", 8);
+    std::ignore = write(STDOUT_FILENO, "\033[?1049h", 8);
     // handle error
 }
 
 void Screen::disableAltBuffer()
 {
-    write(STDOUT_FILENO, "\033[?1049l", 8);
+    std::ignore = write(STDOUT_FILENO, "\033[?1049l", 8);
     // handle error
 }
 
