@@ -160,6 +160,7 @@ class Player: public Character
         std::chrono::steady_clock::time_point jumpTime{};
         const std::chrono::milliseconds jumpDuration{500};
         const std::chrono::milliseconds jumpStep{100};
+        bool isJumpFirstStep{false};
 
         static inline const std::string str{"\033[48;5;21m \033[48;5;244m"};
         static inline CharacterType ctype = CharacterType::Player;
@@ -203,7 +204,14 @@ int Player::jumpBy()
     std::chrono::steady_clock::time_point tnow{std::chrono::steady_clock::now()};
 
     int value = 0;
-    if (tnow - lastTick > jumpStep)
+    if (isJumpFirstStep)
+    {
+        // helps sync the tick to jumpTime ( when the jump was init-ed )
+        isJumpFirstStep = false;
+        lastTick = jumpTime;
+        value = 1;
+    }
+    else if (tnow - lastTick > jumpStep)
     {
         value = 1;
         lastTick = tnow;
@@ -216,7 +224,6 @@ int Player::jumpBy()
 
 struct point Player::getNextPoint()
 {
-    // naive impl
     struct point cur = getCurrentPoint();
 
     cur.row += jumpBy();
@@ -240,7 +247,11 @@ void Player::consumeKeyPress(char c, bool canJump)
     switch(c)
     {
         case 'w':
-            if (canJump) jumpTime = std::chrono::steady_clock::now();
+            if (canJump)
+            {
+                isJumpFirstStep = true;
+                jumpTime = std::chrono::steady_clock::now();
+            }
             break;
         case 'a':
             horizontalForce--;
